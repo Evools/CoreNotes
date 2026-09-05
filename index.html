@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CoreNotes Web Reader</title>
+  <meta name="description" content="Интерактивный веб-ридер заметок CoreNotes">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" id="hljs-theme">
+
+  <!-- Libraries for markdown & lz-string decompression -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+  <style>
+    :root {
+      --bg-primary: #0f1013;
+      --bg-secondary: #16171b;
+      --bg-tertiary: #1e2025;
+      --bg-surface: #24262c;
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-subtle: rgba(255, 255, 255, 0.04);
+      --text-primary: #f4f4f5;
+      --text-secondary: #a1a1aa;
+      --text-muted: #71717a;
+      --accent: #6366f1;
+      --accent-hover: #818cf8;
+      --accent-soft: rgba(99, 102, 241, 0.12);
+      --code-bg: #141518;
+      --table-header: rgba(255, 255, 255, 0.03);
+      --table-border: rgba(255, 255, 255, 0.07);
+      --table-row-hover: rgba(255, 255, 255, 0.02);
+      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    [data-theme="light"] {
+      --bg-primary: #f8fafc;
+      --bg-secondary: #ffffff;
+      --bg-tertiary: #f1f5f9;
+      --bg-surface: #e2e8f0;
+      --border-color: rgba(15, 23, 42, 0.08);
+      --border-subtle: rgba(15, 23, 42, 0.04);
+      --text-primary: #0f172a;
+      --text-secondary: #475569;
+      --text-muted: #94a3b8;
+      --accent: #4f46e5;
+      --accent-hover: #6366f1;
+      --accent-soft: rgba(79, 70, 229, 0.08);
+      --code-bg: #f8fafc;
+      --table-header: rgba(15, 23, 42, 0.03);
+      --table-border: rgba(15, 23, 42, 0.08);
+      --table-row-hover: rgba(15, 23, 42, 0.02);
+      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.06);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.7;
+      font-size: 15.5px;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+      transition: background-color 0.2s, color 0.2s;
+    }
+
+    /* Scroll progress bar */
+    #progress-bar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      height: 2.5px;
+      background: linear-gradient(90deg, #6366f1, #a855f7);
+      width: 0%;
+      z-index: 1000;
+      transition: width 0.1s ease-out;
+    }
+
+    /* Top Navigation */
+    .reader-header {
+      position: sticky;
+      top: 0;
+      z-index: 900;
+      height: 56px;
+      background: var(--bg-primary);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    .header-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: var(--text-primary);
+    }
+
+    .brand-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #6366f1, #a855f7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+    }
+
+    .brand-title {
+      font-weight: 700;
+      font-size: 14px;
+      letter-spacing: -0.2px;
+    }
+
+    .brand-badge {
+      font-size: 10.5px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      padding: 2px 7px;
+      border-radius: 6px;
+      font-weight: 600;
+      margin-left: 2px;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .header-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.15s ease;
+    }
+
+    .header-btn:hover {
+      color: var(--text-primary);
+      border-color: var(--accent);
+      background: var(--bg-tertiary);
+    }
+
+    .author-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 8px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      font-size: 12px;
+      color: var(--text-secondary);
+      text-decoration: none;
+      transition: all 0.15s;
+    }
+
+    .author-chip:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    /* Main Container with Sidebar Outline */
+    .reader-layout {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      padding: 40px 24px 80px;
+      gap: 48px;
+      position: relative;
+    }
+
+    .article-container {
+      flex: 1;
+      min-width: 0;
+      max-width: 780px;
+      margin: 0 auto;
+    }
+
+    /* Document Metadata Card */
+    .doc-meta {
+      margin-bottom: 32px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .doc-title {
+      font-size: 2.25rem;
+      font-weight: 800;
+      line-height: 1.25;
+      letter-spacing: -0.6px;
+      margin-bottom: 16px;
+      color: var(--text-primary);
+    }
+
+    .doc-stats {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 16px;
+      font-size: 12.5px;
+      color: var(--text-muted);
+    }
+
+    .doc-stat-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    /* Markdown Content Styling */
+    .content h1, .content h2, .content h3, .content h4, .content h5, .content h6 {
+      color: var(--text-primary);
+      font-weight: 700;
+      line-height: 1.35;
+      margin-top: 1.8em;
+      margin-bottom: 0.8em;
+      position: relative;
+    }
+
+    .content h1 { font-size: 1.75rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.3em; }
+    .content h2 { font-size: 1.45rem; border-bottom: 1px solid var(--border-subtle); padding-bottom: 0.25em; }
+    .content h3 { font-size: 1.2rem; }
+    .content h4 { font-size: 1.05rem; }
+
+    .header-link {
+      position: absolute;
+      left: -20px;
+      color: var(--text-muted);
+      opacity: 0;
+      text-decoration: none;
+      font-weight: 400;
+      transition: opacity 0.15s;
+    }
+
+    .heading-anchor:hover .header-link {
+      opacity: 0.8;
+    }
+
+    .content p {
+      margin-bottom: 1.25em;
+      color: var(--text-primary);
+    }
+
+    .content strong {
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+
+    .content a {
+      color: var(--accent);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      transition: color 0.15s;
+    }
+
+    .content a:hover {
+      color: var(--accent-hover);
+    }
+
+    .content ul, .content ol {
+      margin-bottom: 1.25em;
+      padding-left: 1.5em;
+    }
+
+    .content li {
+      margin-bottom: 0.4em;
+    }
+
+    /* Task lists / checkboxes */
+    .content li input[type="checkbox"] {
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border: 1.5px solid var(--text-muted);
+      border-radius: 4px;
+      vertical-align: middle;
+      margin-right: 8px;
+      cursor: pointer;
+      position: relative;
+      outline: none;
+      background: transparent;
+      transition: all 0.15s;
+    }
+
+    .content li input[type="checkbox"]:checked {
+      background-color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    .content li input[type="checkbox"]:checked::after {
+      content: '';
+      position: absolute;
+      left: 4.5px;
+      top: 1.5px;
+      width: 4px;
+      height: 8px;
+      border: solid white;
+      border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
+    }
+
+    /* Tables */
+    .table-wrapper {
+      width: 100%;
+      overflow-x: auto;
+      margin: 1.5em 0;
+      border-radius: 12px;
+      border: 1px solid var(--table-border);
+      background: var(--bg-secondary);
+      box-shadow: var(--card-shadow);
+    }
+
+    .reader-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13.5px;
+      text-align: left;
+    }
+
+    .reader-table th {
+      background: var(--table-header);
+      padding: 12px 16px;
+      font-weight: 600;
+      color: var(--text-primary);
+      border-bottom: 1px solid var(--table-border);
+      white-space: nowrap;
+    }
+
+    .reader-table td {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--table-border);
+      color: var(--text-secondary);
+    }
+
+    .reader-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .reader-table tr:hover td {
+      background: var(--table-row-hover);
+    }
+
+    /* Code blocks */
+    .content pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 16px;
+      margin: 1.5em 0;
+      overflow-x: auto;
+      position: relative;
+      box-shadow: var(--card-shadow);
+    }
+
+    .content code {
+      font-family: var(--font-mono);
+      font-size: 13.5px;
+      line-height: 1.6;
+    }
+
+    .content p code, .content li code {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      padding: 2px 6px;
+      border-radius: 5px;
+      font-size: 13px;
+      color: var(--accent);
+    }
+
+    .code-copy-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      opacity: 0;
+      transition: opacity 0.15s, background 0.15s;
+    }
+
+    pre:hover .code-copy-btn {
+      opacity: 1;
+    }
+
+    .code-copy-btn:hover {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+
+    /* Blockquote */
+    .content blockquote {
+      border-left: 3px solid var(--accent);
+      padding: 12px 20px;
+      margin: 1.5em 0;
+      background: var(--bg-secondary);
+      border-radius: 0 10px 10px 0;
+      color: var(--text-secondary);
+      font-style: italic;
+    }
+
+    .content hr {
+      border: none;
+      height: 1px;
+      background: var(--border-color);
+      margin: 2.5em 0;
+    }
+
+    /* Right Sticky Outline (TOC) */
+    .toc-container {
+      width: 260px;
+      flex-shrink: 0;
+      display: none;
+    }
+
+    @media (min-width: 1024px) {
+      .toc-container {
+        display: block;
+      }
+    }
+
+    .reader-toc {
+      position: sticky;
+      top: 80px;
+      max-height: calc(100vh - 120px);
+      overflow-y: auto;
+      padding-right: 12px;
+    }
+
+    .toc-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      margin-bottom: 14px;
+    }
+
+    .toc-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      border-left: 1px solid var(--border-color);
+    }
+
+    .toc-item {
+      margin: 4px 0;
+    }
+
+    .toc-link {
+      display: block;
+      padding: 4px 0 4px 14px;
+      font-size: 13px;
+      color: var(--text-muted);
+      text-decoration: none;
+      border-left: 2px solid transparent;
+      margin-left: -1px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: all 0.15s ease;
+    }
+
+    .toc-level-2 { padding-left: 10px; }
+    .toc-level-3 { padding-left: 20px; font-size: 12px; }
+
+    .toc-link:hover {
+      color: var(--text-primary);
+    }
+
+    .toc-link.active {
+      color: var(--accent);
+      font-weight: 600;
+      border-left-color: var(--accent);
+    }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      background: var(--bg-secondary);
+      border-radius: 16px;
+      border: 1px solid var(--border-color);
+      margin-top: 40px;
+    }
+
+    .empty-icon {
+      width: 48px;
+      height: 48px;
+      margin: 0 auto 16px;
+      color: var(--text-muted);
+      opacity: 0.6;
+    }
+
+    .empty-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: var(--text-primary);
+    }
+
+    .empty-desc {
+      font-size: 13.5px;
+      color: var(--text-muted);
+      max-width: 400px;
+      margin: 0 auto;
+    }
+
+    /* Footer */
+    .reader-footer {
+      max-width: 780px;
+      margin: 60px auto 0;
+      padding-top: 30px;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      text-align: center;
+      font-size: 12.5px;
+      color: var(--text-muted);
+    }
+
+    .footer-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 600;
+      color: var(--text-secondary);
+    }
+
+    @media print {
+      .reader-header, #progress-bar, .toc-container, .code-copy-btn { display: none !important; }
+      body { background: white !important; color: black !important; font-size: 12pt; }
+      .reader-layout { padding: 0 !important; }
+      .article-container { max-width: 100% !important; }
+      .table-wrapper { box-shadow: none !important; border: 1px solid #ccc !important; }
+      pre { box-shadow: none !important; border: 1px solid #ccc !important; }
+    }
+  </style>
+</head>
+<body>
+  <div id="progress-bar"></div>
+
+  <!-- Header -->
+  <header class="reader-header">
+    <a href="#" class="header-brand">
+      <div class="brand-icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10"/><path d="M6 10h10"/></svg>
+      </div>
+      <span class="brand-title">CoreNotes</span>
+      <span class="brand-badge">Reader</span>
+    </a>
+
+    <div class="header-actions">
+      <a href="https://t.me/web_commander" target="_blank" rel="noopener noreferrer" class="author-chip" id="author-link" title="Автор документа">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span id="author-label">Web Commander</span>
+      </a>
+
+      <button type="button" class="header-btn" id="theme-btn" title="Переключить тему">
+        <svg id="moon-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a6 6 0 0 0 9 9 9 0 1 1-9-9Z"/></svg>
+        <svg id="sun-icon" style="display:none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+      </button>
+
+      <button type="button" class="header-btn" onclick="window.print()" title="Печать или экспорт в PDF">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>
+        <span>PDF</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Layout -->
+  <div class="reader-layout">
+    <main class="article-container">
+      <!-- Dynamic Article Container -->
+      <div id="content-container"></div>
+
+      <!-- Footer -->
+      <footer class="reader-footer">
+        <div class="footer-brand">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/></svg>
+          <span>Опубликовано с помощью CoreNotes</span>
+        </div>
+        <p>Разработчик: <a href="https://t.me/web_commander" target="_blank" rel="noopener noreferrer" style="color:var(--accent);text-decoration:none;">Web Commander (@web_commander)</a></p>
+      </footer>
+    </main>
+
+    <!-- Sticky Outline -->
+    <aside class="toc-container" id="toc-container-el">
+      <nav class="reader-toc" id="toc-nav"></nav>
+    </aside>
+  </div>
+
+  <script>
+    // 1. Theme Management
+    const themeBtn = document.getElementById('theme-btn');
+    const moonIcon = document.getElementById('moon-icon');
+    const sunIcon = document.getElementById('sun-icon');
+    const hljsTheme = document.getElementById('hljs-theme');
+
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      localStorage.setItem('corenotes_reader_theme', theme);
+      if (theme === 'light') {
+        moonIcon.style.display = 'none';
+        sunIcon.style.display = 'block';
+        if (hljsTheme) hljsTheme.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-light.min.css';
+      } else {
+        moonIcon.style.display = 'block';
+        sunIcon.style.display = 'none';
+        if (hljsTheme) hljsTheme.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css';
+      }
+    }
+
+    const savedTheme = localStorage.getItem('corenotes_reader_theme') || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+    applyTheme(savedTheme);
+
+    themeBtn.addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-theme');
+      applyTheme(current === 'light' ? 'dark' : 'light');
+    });
+
+    // 2. Reading Progress Bar
+    window.addEventListener('scroll', () => {
+      const winScroll = document.body.scrollTop || document.documentElement.scrollTop;
+      const height = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+      const scrolled = height > 0 ? (winScroll / height) * 100 : 0;
+      document.getElementById('progress-bar').style.width = scrolled + '%';
+    });
+
+    // 3. Parse Markdown and render
+    function renderReader() {
+      const hash = window.location.hash.slice(1);
+      const params = new URLSearchParams(hash);
+      const title = params.get('title') || 'Заметка без названия';
+      const author = params.get('author') || 'Web Commander';
+      const compressedData = params.get('d');
+
+      const authorLabel = document.getElementById('author-label');
+      if (authorLabel) authorLabel.textContent = author;
+
+      let markdown = '';
+      if (compressedData && typeof LZString !== 'undefined') {
+        try {
+          markdown = LZString.decompressFromEncodedURIComponent(compressedData);
+        } catch (e) {
+          console.error('Ошибка декомпрессии:', e);
+        }
+      }
+
+      const container = document.getElementById('content-container');
+      const tocNav = document.getElementById('toc-nav');
+      const tocContainer = document.getElementById('toc-container-el');
+
+      if (!markdown || !markdown.trim()) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <h2 class="empty-title">Заметка не найдена</h2>
+            <p class="empty-desc">В ссылке отсутствуют данные заметки или ссылка была скопирована не полностью.</p>
+          </div>
+        `;
+        if (tocContainer) tocContainer.style.display = 'none';
+        return;
+      }
+
+      document.title = title + ' — CoreNotes Reader';
+
+      // Stats
+      const cleanTitle = title.replace(/\.md$/, '');
+      const words = markdown.trim().split(/\\s+/).filter(Boolean).length;
+      const linesCount = markdown.split('\\n').length;
+      const readTimeMinutes = Math.max(1, Math.ceil(words / 180));
+      const publishDate = new Date().toLocaleDateString('ru-RU', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+
+      // Marked renderer
+      const renderer = new marked.Renderer();
+      const slugCounts = {};
+      const headings = [];
+
+      renderer.heading = ({ text, depth }) => {
+        const rawText = text.replace(/<[^>]+>/g, '');
+        let slug = rawText
+          .toLowerCase()
+          .replace(/[^\\w\\u0400-\\u04FF]+/g, '-')
+          .replace(/^-+|-+$/g, '');
+
+        if (!slug) slug = 'section-' + depth;
+        if (slugCounts[slug] !== undefined) {
+          slugCounts[slug]++;
+          slug = slug + '-' + slugCounts[slug];
+        } else {
+          slugCounts[slug] = 0;
+        }
+
+        if (depth <= 3) {
+          headings.push({ id: slug, text: rawText, level: depth });
+        }
+
+        return `<h${depth} id="${slug}" class="heading-anchor"><a href="#${slug}" class="header-link">#</a>${text}</h${depth}>`;
+      };
+
+      renderer.table = (token) => {
+        let headerHtml = '';
+        let bodyHtml = '';
+        if (token.header && token.header.length > 0) {
+          headerHtml = '<thead><tr>';
+          for (const cell of token.header) headerHtml += `<th>${cell.text}</th>`;
+          headerHtml += '</tr></thead>';
+        }
+        if (token.rows && token.rows.length > 0) {
+          bodyHtml = '<tbody>';
+          for (const row of token.rows) {
+            bodyHtml += '<tr>';
+            for (const cell of row) bodyHtml += `<td>${cell.text}</td>`;
+            bodyHtml += '</tr>';
+          }
+          bodyHtml += '</tbody>';
+        }
+        return `<div class="table-wrapper"><table class="reader-table">${headerHtml}${bodyHtml}</table></div>`;
+      };
+
+      marked.setOptions({
+        gfm: true,
+        breaks: true,
+        renderer: renderer,
+      });
+
+      const parsedHtml = marked.parse(markdown);
+
+      // Render Meta + Content
+      container.innerHTML = `
+        <div class="doc-meta">
+          <h1 class="doc-title">${cleanTitle}</h1>
+          <div class="doc-stats">
+            <div class="doc-stat-item">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>
+              <span>${publishDate}</span>
+            </div>
+            <div class="doc-stat-item">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              <span>~${readTimeMinutes} мин чтения</span>
+            </div>
+            <div class="doc-stat-item">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+              <span>${linesCount} строк · ${words} слов</span>
+            </div>
+          </div>
+        </div>
+        <article class="content">${parsedHtml}</article>
+      `;
+
+      // Build TOC
+      if (headings.length > 0 && tocNav) {
+        tocNav.innerHTML = `
+          <div class="toc-header">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M7 12h14"/><path d="M10 18h11"/></svg>
+            <span>Оглавление</span>
+          </div>
+          <ul class="toc-list">
+            ${headings.map(h => `
+              <li class="toc-item toc-level-${h.level}">
+                <a href="#${h.id}" class="toc-link" data-target="${h.id}">${h.text}</a>
+              </li>
+            `).join('')}
+          </ul>
+        `;
+        if (tocContainer) tocContainer.style.display = 'block';
+        initScrollSpy();
+      } else if (tocContainer) {
+        tocContainer.style.display = 'none';
+      }
+
+      // Syntax highlighting & Copy code buttons
+      document.querySelectorAll('pre code').forEach((block) => {
+        hljs.highlightElement(block);
+        const pre = block.parentElement;
+        if (!pre.querySelector('.code-copy-btn')) {
+          const btn = document.createElement('button');
+          btn.className = 'code-copy-btn';
+          btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg> <span>Копия</span>`;
+          btn.onclick = () => {
+            navigator.clipboard.writeText(block.innerText).then(() => {
+              btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> <span>Готово</span>`;
+              setTimeout(() => {
+                btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg> <span>Копия</span>`;
+              }, 2000);
+            });
+          };
+          pre.appendChild(btn);
+        }
+      });
+    }
+
+    // Scroll-Spy for TOC
+    function initScrollSpy() {
+      const links = document.querySelectorAll('.toc-link');
+      const anchors = Array.from(links).map(l => document.getElementById(l.dataset.target)).filter(Boolean);
+
+      function updateActive() {
+        const scrollPos = window.scrollY + 100;
+        let activeId = null;
+
+        for (let i = anchors.length - 1; i >= 0; i--) {
+          if (anchors[i].offsetTop <= scrollPos) {
+            activeId = anchors[i].id;
+            break;
+          }
+        }
+
+        links.forEach(l => {
+          if (l.dataset.target === activeId) {
+            l.classList.add('active');
+          } else {
+            l.classList.remove('active');
+          }
+        });
+      }
+
+      window.addEventListener('scroll', updateActive);
+      updateActive();
+    }
+
+    window.addEventListener('hashchange', renderReader);
+    window.addEventListener('DOMContentLoaded', renderReader);
+  </script>
+</body>
+</html>
