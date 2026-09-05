@@ -702,8 +702,8 @@
 
       // Stats
       const cleanTitle = title.replace(/\.md$/, '');
-      const words = markdown.trim().split(/\\s+/).filter(Boolean).length;
-      const linesCount = markdown.split('\\n').length;
+      const words = markdown.trim().split(/\s+/).filter(Boolean).length;
+      const linesCount = markdown.split('\n').length;
       const readTimeMinutes = Math.max(1, Math.ceil(words / 180));
       const publishDate = new Date().toLocaleDateString('ru-RU', {
         year: 'numeric',
@@ -716,14 +716,16 @@
       const slugCounts = {};
       const headings = [];
 
-      renderer.heading = ({ text, depth }) => {
-        const rawText = text.replace(/<[^>]+>/g, '');
+      renderer.heading = function(arg1, arg2) {
+        const headingText = typeof arg1 === 'object' ? (arg1.text || '') : (arg1 || '');
+        const headingDepth = typeof arg1 === 'object' ? (arg1.depth || 1) : (arg2 || 1);
+        const rawText = String(headingText).replace(/<[^>]+>/g, '');
         let slug = rawText
           .toLowerCase()
-          .replace(/[^\\w\\u0400-\\u04FF]+/g, '-')
+          .replace(/[^\w\u0400-\u04FF]+/g, '-')
           .replace(/^-+|-+$/g, '');
 
-        if (!slug) slug = 'section-' + depth;
+        if (!slug) slug = 'section-' + headingDepth;
         if (slugCounts[slug] !== undefined) {
           slugCounts[slug]++;
           slug = slug + '-' + slugCounts[slug];
@@ -731,29 +733,41 @@
           slugCounts[slug] = 0;
         }
 
-        if (depth <= 3) {
-          headings.push({ id: slug, text: rawText, level: depth });
+        if (headingDepth <= 3) {
+          headings.push({ id: slug, text: rawText, level: headingDepth });
         }
 
-        return `<h${depth} id="${slug}" class="heading-anchor"><a href="#${slug}" class="header-link">#</a>${text}</h${depth}>`;
+        return `<h${headingDepth} id="${slug}" class="heading-anchor"><a href="#${slug}" class="header-link">#</a>${headingText}</h${headingDepth}>`;
       };
 
-      renderer.table = (token) => {
+      renderer.table = function(arg1, arg2) {
         let headerHtml = '';
         let bodyHtml = '';
-        if (token.header && token.header.length > 0) {
-          headerHtml = '<thead><tr>';
-          for (const cell of token.header) headerHtml += `<th>${cell.text}</th>`;
-          headerHtml += '</tr></thead>';
-        }
-        if (token.rows && token.rows.length > 0) {
-          bodyHtml = '<tbody>';
-          for (const row of token.rows) {
-            bodyHtml += '<tr>';
-            for (const cell of row) bodyHtml += `<td>${cell.text}</td>`;
-            bodyHtml += '</tr>';
+        if (typeof arg1 === 'string') {
+          headerHtml = arg1;
+          bodyHtml = arg2 || '';
+        } else if (arg1 && typeof arg1 === 'object') {
+          if (arg1.header && arg1.header.length > 0) {
+            headerHtml = '<thead><tr>';
+            for (const cell of arg1.header) {
+              const cellText = typeof cell === 'object' ? (cell.text || '') : String(cell || '');
+              headerHtml += `<th>${cellText}</th>`;
+            }
+            headerHtml += '</tr></thead>';
           }
-          bodyHtml += '</tbody>';
+          if (arg1.rows && arg1.rows.length > 0) {
+            bodyHtml = '<tbody>';
+            for (const row of arg1.rows) {
+              bodyHtml += '<tr>';
+              const cells = Array.isArray(row) ? row : (row.cells || []);
+              for (const cell of cells) {
+                const cellText = typeof cell === 'object' ? (cell.text || '') : String(cell || '');
+                bodyHtml += `<td>${cellText}</td>`;
+              }
+              bodyHtml += '</tr>';
+            }
+            bodyHtml += '</tbody>';
+          }
         }
         return `<div class="table-wrapper"><table class="reader-table">${headerHtml}${bodyHtml}</table></div>`;
       };
