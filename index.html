@@ -262,6 +262,10 @@
       transition: opacity 0.15s;
     }
 
+    .heading-anchor {
+      scroll-margin-top: 76px;
+    }
+
     .heading-anchor:hover .header-link {
       opacity: 0.8;
     }
@@ -682,12 +686,26 @@
     });
 
     // 3. Parse Markdown and render
+    let currentMarkdown = '';
+    let currentTitle = '';
+    let lastRenderedD = null;
+
     function renderReader() {
       const hash = window.location.hash.slice(1);
       const params = new URLSearchParams(hash);
-      const title = params.get('title') || 'Заметка без названия';
-      const author = params.get('author') || 'Web Commander';
       const compressedData = params.get('d');
+      const title = params.get('title') || currentTitle || 'Заметка без названия';
+      const author = params.get('author') || 'Web Commander';
+
+      // If already rendered this exact data, don't re-render
+      if (compressedData && compressedData === lastRenderedD) {
+        return;
+      }
+
+      // If hash changed to an anchor link without d parameter, keep current content!
+      if (!compressedData && currentMarkdown) {
+        return;
+      }
 
       const authorLabel = document.getElementById('author-label');
       if (authorLabel) authorLabel.textContent = author;
@@ -706,6 +724,7 @@
       const tocContainer = document.getElementById('toc-container-el');
 
       if (!markdown || !markdown.trim()) {
+        if (currentMarkdown) return;
         container.innerHTML = `
           <div class="empty-state">
             <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -716,6 +735,10 @@
         if (tocContainer) tocContainer.style.display = 'none';
         return;
       }
+
+      currentMarkdown = markdown;
+      currentTitle = title;
+      lastRenderedD = compressedData;
 
       document.title = title + ' — CoreNotes Reader';
 
@@ -891,6 +914,31 @@
       window.addEventListener('scroll', updateActive);
       updateActive();
     }
+
+    // Intercept clicks on anchor links so URL hash is not mutated and link doesn't break
+    document.addEventListener('click', (e) => {
+      const anchor = e.target.closest('a[href^="#"]');
+      if (!anchor) return;
+      const href = anchor.getAttribute('href');
+      if (!href || href === '#') return;
+      if (href.startsWith('#title=') || href.startsWith('#d=')) return;
+
+      e.preventDefault(); // Always prevent default so window.location.hash is never overwritten!
+
+      let targetId = href.slice(1);
+      try {
+        targetId = decodeURIComponent(targetId);
+      } catch (err) {}
+
+      let targetEl = document.getElementById(targetId) || document.getElementById(encodeURIComponent(targetId));
+      if (!targetEl && anchor.dataset.target) {
+        targetEl = document.getElementById(anchor.dataset.target);
+      }
+
+      if (targetEl) {
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
 
     window.addEventListener('hashchange', renderReader);
     window.addEventListener('DOMContentLoaded', renderReader);
