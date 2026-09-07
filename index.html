@@ -683,6 +683,19 @@
       margin: 0 auto;
     }
 
+    .loading-spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid var(--border-color);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 20px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
     /* Footer */
     .reader-footer {
       max-width: 780px;
@@ -821,57 +834,117 @@
     // 3. Parse Markdown and render
     let currentMarkdown = '';
     let currentTitle = '';
-    let lastRenderedD = null;
+    let lastRenderedKey = null;
 
-    function renderReader() {
+    async function renderReader() {
       const hash = window.location.hash.slice(1);
       const params = new URLSearchParams(hash);
+      const shortId = params.get('s');
       const compressedData = params.get('d');
       const title = params.get('title') || currentTitle || 'Заметка без названия';
       const author = params.get('author') || 'Web Commander';
 
-      // If already rendered this exact data, don't re-render
-      if (compressedData && compressedData === lastRenderedD) {
-        return;
-      }
-
-      // If hash changed to an anchor link without d parameter, keep current content!
-      if (!compressedData && currentMarkdown) {
-        return;
-      }
-
       const authorLabel = document.getElementById('author-label');
       if (authorLabel) authorLabel.textContent = author;
 
-      let markdown = '';
-      if (compressedData && typeof LZString !== 'undefined') {
-        try {
-          markdown = LZString.decompressFromEncodedURIComponent(compressedData);
-        } catch (e) {
-          console.error('Ошибка декомпрессии:', e);
-        }
+      // If anchor navigation inside already loaded document, keep content
+      if (!shortId && !compressedData && currentMarkdown) {
+        return;
+      }
+
+      const currentKey = shortId ? `s:${shortId}` : compressedData ? `d:${compressedData}` : null;
+      if (currentKey && currentKey === lastRenderedKey && currentMarkdown) {
+        return;
       }
 
       const container = document.getElementById('content-container');
-      const tocNav = document.getElementById('toc-nav');
       const tocContainer = document.getElementById('toc-container-el');
 
-      if (!markdown || !markdown.trim()) {
-        if (currentMarkdown) return;
+      // Case A: Short Link ID via dpaste
+      if (shortId) {
+        if (tocContainer) tocContainer.style.display = 'none';
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="loading-spinner"></div>
+            <h2 class="empty-title">Загрузка заметки...</h2>
+            <p class="empty-desc">Загружаем конспект по короткой ссылке</p>
+          </div>
+        `;
+
+        try {
+          const res = await fetch(`https://dpaste.com/${encodeURIComponent(shortId)}.txt`);
+          if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
+          }
+          const markdown = await res.text();
+          if (!markdown || !markdown.trim()) {
+            throw new Error('Пустая заметка');
+          }
+
+          lastRenderedKey = currentKey;
+          processAndDisplayMarkdown(markdown, title, author);
+        } catch (err) {
+          console.error('Ошибка загрузки заметки:', err);
+          container.innerHTML = `
+            <div class="empty-state">
+              <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <h2 class="empty-title">Не удалось загрузить заметку</h2>
+              <p class="empty-desc">Возможно, ссылка устарела или отсутствует подключение к интернету.</p>
+            </div>
+          `;
+        }
+        return;
+      }
+
+      // Case B: Compressed LZ-String hash
+      if (compressedData) {
+        let markdown = '';
+        if (typeof LZString !== 'undefined') {
+          try {
+            markdown = LZString.decompressFromEncodedURIComponent(compressedData);
+          } catch (e) {
+            console.error('Ошибка декомпрессии:', e);
+          }
+        }
+
+        if (!markdown || !markdown.trim()) {
+          if (currentMarkdown) return;
+          container.innerHTML = `
+            <div class="empty-state">
+              <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <h2 class="empty-title">Заметка не найдена</h2>
+              <p class="empty-desc">В ссылке отсутствуют данные заметки или ссылка была скопирована не полностью.</p>
+            </div>
+          `;
+          if (tocContainer) tocContainer.style.display = 'none';
+          return;
+        }
+
+        lastRenderedKey = currentKey;
+        processAndDisplayMarkdown(markdown, title, author);
+        return;
+      }
+
+      // Case C: Empty state
+      if (!currentMarkdown) {
         container.innerHTML = `
           <div class="empty-state">
             <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
             <h2 class="empty-title">Заметка не найдена</h2>
-            <p class="empty-desc">В ссылке отсутствуют данные заметки или ссылка была скопирована не полностью.</p>
+            <p class="empty-desc">В ссылке отсутствуют данные заметки.</p>
           </div>
         `;
         if (tocContainer) tocContainer.style.display = 'none';
-        return;
       }
+    }
 
+    function processAndDisplayMarkdown(markdown, title, author) {
       currentMarkdown = markdown;
       currentTitle = title;
-      lastRenderedD = compressedData;
+
+      const container = document.getElementById('content-container');
+      const tocNav = document.getElementById('toc-nav');
+      const tocContainer = document.getElementById('toc-container-el');
 
       document.title = title + ' — CoreNotes Reader';
 
@@ -1193,7 +1266,7 @@
       if (!anchor) return;
       const href = anchor.getAttribute('href');
       if (!href || href === '#') return;
-      if (href.startsWith('#title=') || href.startsWith('#d=')) return;
+      if (href.startsWith('#title=') || href.startsWith('#d=') || href.startsWith('#s=')) return;
 
       e.preventDefault(); // Always prevent default so window.location.hash is never overwritten!
 
