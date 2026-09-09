@@ -466,6 +466,85 @@
       border-color: rgba(16, 185, 129, 0.22);
     }
 
+    /* ─── Images in Web Reader ─── */
+    .reader-image-card {
+      margin: 28px auto;
+      text-align: center;
+      max-width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .reader-image {
+      max-width: 100%;
+      max-height: 650px;
+      height: auto;
+      border-radius: 12px;
+      border: 1px solid var(--border-color);
+      background-color: var(--bg-secondary);
+      box-shadow: var(--card-shadow);
+      cursor: zoom-in;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      display: block;
+    }
+    .reader-image:hover {
+      transform: scale(1.01);
+      box-shadow: 0 12px 35px -8px rgba(0, 0, 0, 0.4);
+    }
+    .reader-image-caption {
+      display: block;
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    /* Reader Lightbox */
+    #reader-lightbox {
+      position: fixed;
+      inset: 0;
+      z-index: 99999;
+      background: rgba(0, 0, 0, 0.88);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      cursor: zoom-out;
+    }
+    #reader-lightbox.active {
+      display: flex;
+    }
+    #reader-lightbox img {
+      max-width: 92vw;
+      max-height: 90vh;
+      object-fit: contain;
+      border-radius: 10px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+      cursor: default;
+      transition: transform 0.15s ease-out;
+    }
+    #reader-lightbox-close {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      background: rgba(255, 255, 255, 0.12);
+      border: none;
+      color: white;
+      font-size: 24px;
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #reader-lightbox-close:hover {
+      background: rgba(255, 255, 255, 0.25);
+    }
+
     /* Tables */
     .table-wrapper {
       width: 100%;
@@ -1353,6 +1432,54 @@
         return `<div class="table-wrapper"><table class="reader-table">${headerHtml}${bodyHtml}</table></div>`;
       };
 
+      renderer.image = function(arg1, arg2, arg3) {
+        let href = '';
+        let text = '';
+        if (typeof arg1 === 'object' && arg1 !== null) {
+          href = arg1.href || '';
+          text = arg1.text || '';
+        } else {
+          href = arg1 || '';
+          text = arg3 || arg2 || '';
+        }
+
+        let customWidth = '';
+        let cleanAlt = text || 'Изображение';
+        const widthMatch = cleanAlt.match(/(?:^|\|)(\d+)(?:px)?$/);
+        if (widthMatch) {
+          customWidth = `width: ${widthMatch[1]}px; max-width: 100%;`;
+          cleanAlt = cleanAlt.replace(/(?:\|)?\d+(?:px)?$/, '').trim() || 'Изображение';
+        }
+
+        const widthStyle = customWidth ? ` style="${customWidth}"` : '';
+        const captionHtml = cleanAlt && cleanAlt !== 'Изображение' ? `<span class="reader-image-caption">${cleanAlt}</span>` : '';
+
+        return `<figure class="reader-image-card"><img src="${href}" alt="${cleanAlt}" loading="lazy"${widthStyle} class="reader-image" onclick="window.openReaderLightbox('${href}')" />${captionHtml}</figure>`;
+      };
+
+      // Lightbox for web reader
+      window.openReaderLightbox = function(src) {
+        let lb = document.getElementById('reader-lightbox');
+        if (!lb) {
+          lb = document.createElement('div');
+          lb.id = 'reader-lightbox';
+          lb.innerHTML = '<button id="reader-lightbox-close" type="button" title="Закрыть (Esc)">&times;</button><img id="reader-lightbox-img" src="" alt="Увеличенное изображение" />';
+          document.body.appendChild(lb);
+          lb.onclick = function() { lb.classList.remove('active'); };
+          document.getElementById('reader-lightbox-close').onclick = function(e) {
+            e.stopPropagation();
+            lb.classList.remove('active');
+          };
+          window.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && lb.classList.contains('active')) {
+              lb.classList.remove('active');
+            }
+          });
+        }
+        document.getElementById('reader-lightbox-img').src = src;
+        lb.classList.add('active');
+      };
+
       marked.setOptions({
         gfm: true,
         breaks: true,
@@ -1495,7 +1622,17 @@
         }
       }
 
-      const parsedHtml = marked.parse(markdown);
+      // Preprocess Obsidian image syntax: ![[image.png]] or ![[image.png|300]]
+      let renderMarkdown = markdown.replace(/!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, function(match, imgPath, widthOrAlt) {
+        const cleanPath = imgPath.trim();
+        if (/\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(cleanPath) || cleanPath.startsWith('data:')) {
+          const alt = widthOrAlt ? widthOrAlt.trim() : cleanPath;
+          return `![${alt}](${cleanPath})`;
+        }
+        return match;
+      });
+
+      const parsedHtml = marked.parse(renderMarkdown);
 
       // Render Meta + Content
       container.innerHTML = `
